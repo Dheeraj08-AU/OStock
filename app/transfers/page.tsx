@@ -1,15 +1,124 @@
-import TeammatePlaceholder from "@/components/common/TeammatePlaceholder";
-import { ArrowLeftRight } from "lucide-react";
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { createClient } from '@/utils/supabase/client';
+import AppShell from '@/components/navigation/AppShell';
+import FilterBar from '@/components/filters/FilterBar';
+import NewTransferModal from './NewTransferModal';
+import { ArrowLeftRight, Plus, Eye, ArrowRight } from 'lucide-react';
+import { MoveStatus } from '@/types';
+
+interface TransferRow {
+  id: string; status: MoveStatus; quantity: number; reference: string | null; created_at: string;
+  products: { name: string; uom: string } | null;
+  fromLoc: { name: string } | null;
+  toLoc: { name: string } | null;
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  draft: 'bg-slate-100 text-slate-600', waiting: 'bg-amber-50 text-amber-700',
+  ready: 'bg-blue-50 text-blue-700', done: 'bg-emerald-50 text-emerald-700',
+  canceled: 'bg-red-50 text-red-600',
+};
 
 export default function TransfersPage() {
+  const supabase = createClient();
+  const [transfers, setTransfers] = useState<TransferRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('stock_moves')
+      .select(`id, status, quantity, reference, created_at,
+        products ( name, uom ),
+        fromLoc:locations!stock_moves_from_location_fkey ( name ),
+        toLoc:locations!stock_moves_to_location_fkey ( name )`)
+      .eq('move_type', 'internal')
+      .order('created_at', { ascending: false });
+    if (data) setTransfers(data as unknown as TransferRow[]);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
   return (
-    <TeammatePlaceholder
-      title="Internal Transfers"
-      section="Location-to-Location & Inter-Warehouse Stock Transfers"
-      assignedTo="Teammate (Deliveries, Transfers, Adjustments)"
-      description="Shift items from receiving docks to racks, or between different warehouses"
-      icon={ArrowLeftRight}
-      includeFilterBar={true}
-    />
+    <AppShell>
+      <div className="p-6 max-w-7xl mx-auto w-full">
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <ArrowLeftRight className="w-5 h-5 text-blue-600" />
+              <h1 className="text-xl font-bold text-slate-900">Internal Transfers</h1>
+            </div>
+            <p className="text-sm text-slate-500">Move stock between locations — total on-hand never changes</p>
+          </div>
+          <button id="btn-new-transfer" onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition shadow-sm shadow-blue-200 cursor-pointer">
+            <Plus className="w-4 h-4" /> New Transfer
+          </button>
+        </div>
+
+        <div className="mb-4"><FilterBar syncUrl={true} /></div>
+
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/70">
+                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Product</th>
+                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Qty</th>
+                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Route</th>
+                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Date</th>
+                  <th className="px-5 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      {[130, 60, 180, 80, 80, 50].map((w, j) => (
+                        <td key={j} className="px-5 py-4"><div className="h-3.5 bg-slate-100 rounded" style={{ width: w }} /></td>
+                      ))}
+                    </tr>
+                  ))
+                ) : transfers.length === 0 ? (
+                  <tr><td colSpan={6}>
+                    <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
+                      <ArrowLeftRight className="w-10 h-10 text-slate-300" />
+                      <p className="font-semibold text-slate-500">No transfers yet</p>
+                      <p className="text-xs text-slate-400">Move stock between locations without changing total inventory.</p>
+                    </div>
+                  </td></tr>
+                ) : (
+                  transfers.map(t => (
+                    <tr key={t.id} className="hover:bg-slate-50/60 transition cursor-pointer" onClick={() => window.location.href = `/transfers/${t.id}`}>
+                      <td className="px-5 py-3.5 font-semibold text-slate-800">{t.products?.name ?? '—'} <span className="text-slate-400 text-xs">{t.products?.uom}</span></td>
+                      <td className="px-5 py-3.5 font-semibold text-slate-800 tabular-nums">{t.quantity}</td>
+                      <td className="px-5 py-3.5 text-slate-500 text-xs">
+                        <span className="inline-flex items-center gap-1.5">{t.fromLoc?.name ?? '—'} <ArrowRight className="w-3 h-3" /> {t.toLoc?.name ?? '—'}</span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${STATUS_STYLES[t.status] || STATUS_STYLES.draft}`}>{t.status}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-400 text-xs">{new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+                      <td className="px-5 py-3.5">
+                        <Link href={`/transfers/${t.id}`} onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs text-blue-600 font-semibold hover:text-blue-800 transition">
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {showModal && <NewTransferModal onClose={() => setShowModal(false)} onCreated={() => { setShowModal(false); load(); }} />}
+    </AppShell>
   );
 }

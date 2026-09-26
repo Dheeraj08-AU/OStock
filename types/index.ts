@@ -41,3 +41,13 @@ export interface ProductCategory {
   name: string;
   description?: string;
 }
+
+// Alias used in deliveries/transfers/adjustments pages
+export type Category = ProductCategory;
+
+export interface StockByLocation {
+  id: string;
+  product_id: string;
+  location_id: string;
+  qty: number;
+}
